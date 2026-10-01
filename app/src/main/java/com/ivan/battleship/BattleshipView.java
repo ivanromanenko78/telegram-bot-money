@@ -838,7 +838,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             aiBusy = false;
             showEnemy = true;
             message = "ПОРАЖЕНИЕ";
-            speak("Убил. Поражение.");
+            speak("Поражение");
             invalidate();
             return;
         }
