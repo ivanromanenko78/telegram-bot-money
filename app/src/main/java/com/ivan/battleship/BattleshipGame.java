@@ -7,9 +7,25 @@ import java.util.Random;
 
 public class BattleshipGame {
     public static final int SIZE = 10;
-    private static final int[] FLEET = {4, 3, 3, 2, 2, 2, 1, 1, 1, 1};
+    public static final int[] FLEET = {4, 3, 3, 2, 2, 2, 1, 1, 1, 1};
 
     public enum ShotResult { MISS, HIT, SUNK, ALREADY }
+
+    public static class ShipPlacement {
+        public final int id;
+        public final int len;
+        public final int x;
+        public final int y;
+        public final boolean horizontal;
+
+        public ShipPlacement(int id, int len, int x, int y, boolean horizontal) {
+            this.id = id;
+            this.len = len;
+            this.x = x;
+            this.y = y;
+            this.horizontal = horizontal;
+        }
+    }
 
     public static class Board {
         private final int[][] ship = new int[SIZE][SIZE];
@@ -18,51 +34,102 @@ public class BattleshipGame {
         private int shipsCount;
 
         Board(Random random) {
-            this.random = random;
-            resetAndPlace();
+            this(random, true);
         }
 
-        public void resetAndPlace() {
+        Board(Random random, boolean autoPlace) {
+            this.random = random;
+            clearBoard();
+            shipsCount = FLEET.length;
+            if (autoPlace) {
+                autoPlaceAllShips();
+            }
+        }
+
+        private void clearBoard() {
             for (int y = 0; y < SIZE; y++) {
                 for (int x = 0; x < SIZE; x++) {
                     ship[y][x] = -1;
                     shot[y][x] = false;
                 }
             }
-            shipsCount = FLEET.length;
-            for (int id = 0; id < FLEET.length; id++) placeShip(id, FLEET[id]);
         }
 
-        private void placeShip(int id, int len) {
+        public void resetAndPlace() {
+            clearBoard();
+            shipsCount = FLEET.length;
+            autoPlaceAllShips();
+        }
+
+        private void autoPlaceAllShips() {
+            for (int id = 0; id < FLEET.length; id++) {
+                placeShipRandom(id, FLEET[id]);
+            }
+        }
+
+        private void placeShipRandom(int id, int len) {
             for (int tries = 0; tries < 5000; tries++) {
                 boolean horizontal = random.nextBoolean();
-                int x = random.nextInt(SIZE), y = random.nextInt(SIZE);
-                if (canPlace(x, y, len, horizontal)) {
-                    for (int i = 0; i < len; i++) {
-                        int px = x + (horizontal ? i : 0);
-                        int py = y + (horizontal ? 0 : i);
-                        ship[py][px] = id;
-                    }
+                int x = random.nextInt(SIZE);
+                int y = random.nextInt(SIZE);
+                if (canPlaceShip(id, x, y, len, horizontal)) {
+                    placeShipManual(id, x, y, len, horizontal);
                     return;
                 }
             }
             throw new IllegalStateException("Could not place ship");
         }
 
-        private boolean canPlace(int x, int y, int len, boolean horizontal) {
+        public void clearShipsAndShots() {
+            clearBoard();
+            shipsCount = FLEET.length;
+        }
+
+        public void clearShotsOnly() {
+            for (int y = 0; y < SIZE; y++) {
+                for (int x = 0; x < SIZE; x++) {
+                    shot[y][x] = false;
+                }
+            }
+            shipsCount = FLEET.length;
+        }
+
+        public boolean canPlaceShip(int ignoreId, int x, int y, int len, boolean horizontal) {
             int endX = x + (horizontal ? len - 1 : 0);
             int endY = y + (horizontal ? 0 : len - 1);
-            if (endX >= SIZE || endY >= SIZE) return false;
+            if (x < 0 || y < 0 || endX >= SIZE || endY >= SIZE) return false;
+
             for (int i = 0; i < len; i++) {
                 int px = x + (horizontal ? i : 0);
                 int py = y + (horizontal ? 0 : i);
                 for (int yy = py - 1; yy <= py + 1; yy++) {
                     for (int xx = px - 1; xx <= px + 1; xx++) {
-                        if (xx >= 0 && xx < SIZE && yy >= 0 && yy < SIZE && ship[yy][xx] != -1) return false;
+                        if (xx >= 0 && xx < SIZE && yy >= 0 && yy < SIZE) {
+                            int otherId = ship[yy][xx];
+                            if (otherId != -1 && otherId != ignoreId) {
+                                return false;
+                            }
+                        }
                     }
                 }
             }
             return true;
+        }
+
+        public void removeShip(int id) {
+            for (int y = 0; y < SIZE; y++) {
+                for (int x = 0; x < SIZE; x++) {
+                    if (ship[y][x] == id) ship[y][x] = -1;
+                }
+            }
+        }
+
+        public void placeShipManual(int id, int x, int y, int len, boolean horizontal) {
+            for (int i = 0; i < len; i++) {
+                int px = x + (horizontal ? i : 0);
+                int py = y + (horizontal ? 0 : i);
+                ship[py][px] = id;
+            }
         }
 
         public ShotResult shoot(int x, int y) {
@@ -93,13 +160,16 @@ public class BattleshipGame {
         }
 
         public boolean isSunk(int id) {
-            for (int y = 0; y < SIZE; y++)
-                for (int x = 0; x < SIZE; x++)
+            for (int y = 0; y < SIZE; y++) {
+                for (int x = 0; x < SIZE; x++) {
                     if (ship[y][x] == id && !shot[y][x]) return false;
+                }
+            }
             return true;
         }
 
         public boolean hasShip(int x, int y) { return ship[y][x] != -1; }
+        public int shipIdAt(int x, int y) { return ship[y][x]; }
         public boolean wasShot(int x, int y) { return shot[y][x]; }
         public boolean allSunk() { return shipsCount <= 0; }
         public int shipsLeft() { return shipsCount; }
@@ -123,14 +193,25 @@ public class BattleshipGame {
         aiTargets.clear();
     }
 
+    public void newGameWithPlayerPlacements(List<ShipPlacement> placements) {
+        player = new Board(random, false);
+        player.clearShipsAndShots();
+        for (ShipPlacement placement : placements) {
+            player.placeShipManual(placement.id, placement.x, placement.y, placement.len, placement.horizontal);
+        }
+        player.clearShotsOnly();
+        enemy = new Board(random);
+        gameOver = false;
+        playerTurn = true;
+        aiTargets.clear();
+    }
+
     public void rearrangePlayer() {
         if (!gameOver && playerTurn && noPlayerShotsReceived()) player.resetAndPlace();
     }
 
     private boolean noPlayerShotsReceived() {
-        for (int y = 0; y < SIZE; y++)
-            for (int x = 0; x < SIZE; x++)
-                if (player.wasShot(x, y)) return false;
+        for (int y = 0; y < SIZE; y++) for (int x = 0; x < SIZE; x++) if (player.wasShot(x, y)) return false;
         return true;
     }
 
@@ -152,8 +233,9 @@ public class BattleshipGame {
         ShotResult result = player.shoot(cell[0], cell[1]);
         if (result == ShotResult.HIT) addNeighbors(cell[0], cell[1]);
         if (result == ShotResult.SUNK) aiTargets.clear();
-        if (player.allSunk()) gameOver = true;
-        else if (result == ShotResult.MISS) {
+        if (player.allSunk()) {
+            gameOver = true;
+        } else if (result == ShotResult.MISS) {
             playerTurn = true;
             aiTargets.clear();
         }
@@ -167,9 +249,11 @@ public class BattleshipGame {
             if (!player.wasShot(c[0], c[1])) return c;
         }
         List<int[]> cells = new ArrayList<>();
-        for (int y = 0; y < SIZE; y++)
-            for (int x = 0; x < SIZE; x++)
+        for (int y = 0; y < SIZE; y++) {
+            for (int x = 0; x < SIZE; x++) {
                 if (!player.wasShot(x, y)) cells.add(new int[]{x, y});
+            }
+        }
         Collections.shuffle(cells, random);
         return cells.get(0);
     }
