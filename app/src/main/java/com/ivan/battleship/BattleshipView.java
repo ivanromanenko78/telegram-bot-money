@@ -3,6 +3,7 @@ package com.ivan.battleship;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -103,7 +104,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             dockShipRects[i] = new RectF();
         }
 
-        tts = new TextToSpeech(context, this);
+        tts = createPreferredTts(context);
         musicEngine.setTrack(selectedTrack);
         musicEngine.setVolume(0.12f);
         musicEngine.start();
@@ -116,16 +117,26 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             ttsReady = result != TextToSpeech.LANG_MISSING_DATA
                     && result != TextToSpeech.LANG_NOT_SUPPORTED;
             chooseSoftFemaleRussianVoice();
-            tts.setSpeechRate(0.80f);
-            tts.setPitch(1.02f);
+            tts.setSpeechRate(0.78f);
+            tts.setPitch(0.94f);
+        }
+    }
+
+    private TextToSpeech createPreferredTts(Context context) {
+        try {
+            context.getPackageManager().getPackageInfo("com.google.android.tts", 0);
+            return new TextToSpeech(context, this, "com.google.android.tts");
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return new TextToSpeech(context, this);
         }
     }
 
     private void chooseSoftFemaleRussianVoice() {
         if (tts == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+
         try {
             Set<Voice> voices = tts.getVoices();
-            if (voices == null) return;
+            if (voices == null || voices.isEmpty()) return;
 
             Voice best = null;
             int bestScore = Integer.MIN_VALUE;
@@ -134,12 +145,47 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
                 Locale locale = voice.getLocale();
                 if (locale == null || !"ru".equalsIgnoreCase(locale.getLanguage())) continue;
 
-                String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+                String name = voice.getName() == null
+                        ? ""
+                        : voice.getName().toLowerCase(Locale.ROOT);
+
+                // Never deliberately select a voice explicitly marked as male.
+                if (name.contains("#male_")
+                        || name.contains(" male")
+                        || name.contains("x-ruf")) {
+                    continue;
+                }
+
+                Set<String> features = voice.getFeatures();
+                if (features != null
+                        && features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) {
+                    continue;
+                }
+
+                int availability = tts.isLanguageAvailable(locale);
+                if (availability == TextToSpeech.LANG_MISSING_DATA
+                        || availability == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    continue;
+                }
+
                 int score = 0;
-                if ("RU".equalsIgnoreCase(locale.getCountry())) score += 20;
-                if (name.contains("female") || name.contains("woman") || name.contains("жен")) score += 100;
-                if (name.contains("network") || name.contains("neural") || name.contains("wavenet")) score += 25;
-                if (!voice.isNetworkConnectionRequired()) score += 5;
+
+                // Google Russian female voices commonly expose these identifiers.
+                if (name.contains("#female_")) score += 1000;
+                if (name.contains("x-dfc")) score += 900;
+                if (name.contains("x-rue")) score += 850;
+                if (name.equals("ru-ru-language") || name.contains("ru-ru-language")) score += 700;
+
+                if (name.contains("female")
+                        || name.contains("woman")
+                        || name.contains("жен")) {
+                    score += 700;
+                }
+
+                if ("RU".equalsIgnoreCase(locale.getCountry())) score += 50;
+                if (name.contains("network")) score += 30;
+                if (name.contains("neural") || name.contains("wavenet")) score += 40;
+                if (!voice.isNetworkConnectionRequired()) score += 15;
 
                 if (score > bestScore) {
                     bestScore = score;
@@ -147,7 +193,9 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
                 }
             }
 
-            if (best != null) tts.setVoice(best);
+            if (best != null) {
+                tts.setVoice(best);
+            }
         } catch (Exception ignored) {}
     }
 
@@ -720,23 +768,23 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             if (game.isGameOver()) {
                 message = "ПОБЕДА";
                 recordBattleResult(true);
-                speak("Убил. Победа.");
+                speak("Убил... Победа.");
                 invalidate();
                 return true;
             }
 
             if (r == BattleshipGame.ShotResult.MISS) {
-                speak("Мимо");
+                speak("Мимо...");
                 message = "Мимо. Ход компьютера…";
                 aiBusy = true;
                 invalidate();
                 postDelayed(this::runAiTurn, 420);
             } else if (r == BattleshipGame.ShotResult.SUNK) {
-                speak("Убил");
+                speak("Убил...");
                 message = "Убил! Стреляйте ещё.";
                 invalidate();
             } else {
-                speak("Ранил");
+                speak("Ранил...");
                 message = "Ранил! Стреляйте ещё.";
                 invalidate();
             }
@@ -1006,7 +1054,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             showEnemy = true;
             message = "ПОРАЖЕНИЕ";
             recordBattleResult(false);
-            speak("Поражение");
+            speak("Поражение...");
             invalidate();
             return;
         }
