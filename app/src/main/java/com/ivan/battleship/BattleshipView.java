@@ -56,6 +56,13 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     private boolean aiBusy = false;
     private boolean resultRecorded = false;
     private int lastAwardedPoints = 0;
+    private float animatedPoints = 0f;
+    private int scoreAnimFrom = 0;
+    private int scoreAnimTo = 0;
+    private long scoreAnimStart = 0L;
+    private long levelUpAnimStart = 0L;
+    private static final long SCORE_ANIM_MS = 1100L;
+    private static final long LEVEL_ANIM_MS = 1800L;
 
     private final int bg = 0xFF071B2F;
     private final int panel = 0xFF0D2B47;
@@ -95,6 +102,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         super(context);
         density = getResources().getDisplayMetrics().density;
         progress = new ProgressManager(context);
+        animatedPoints = progress.getPoints();
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(dp(1));
         setBackgroundColor(bg);
@@ -235,9 +243,9 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         p.setTextSize(dp(13));
         c.drawText(message, w / 2f, top + dp(50), p);
 
-        drawProgressHeader(c, w, top + dp(67));
+        drawProgressHeader(c, w, top + dp(76));
 
-        float btnY = top + dp(82);
+        float btnY = top + dp(116);
         if (placementMode) {
             float btnW = (w - margin * 2 - gap) / 2f;
             newGameRect.set(margin, btnY, margin + btnW, btnY + dp(44));
@@ -333,28 +341,56 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     }
 
     private void drawProgressHeader(Canvas c, float w, float y) {
-        String status;
-        if (progress.isMaxLevel()) {
-            status = "Ур." + progress.getLevelNumber() + " " + progress.getLevelName()
-                    + "  •  " + progress.getPoints() + " оч."
-                    + "  •  В " + progress.getWins() + " / П " + progress.getLosses()
-                    + "  •  MAX";
+        long now = System.currentTimeMillis();
+        boolean animating = scoreAnimStart > 0L && now - scoreAnimStart < SCORE_ANIM_MS;
+
+        if (animating) {
+            float t = Math.min(1f, (now - scoreAnimStart) / (float) SCORE_ANIM_MS);
+            float eased = 1f - (float)Math.pow(1f - t, 3.0);
+            animatedPoints = scoreAnimFrom + (scoreAnimTo - scoreAnimFrom) * eased;
+            postInvalidateOnAnimation();
         } else {
-            status = "Ур." + progress.getLevelNumber() + " " + progress.getLevelName()
-                    + "  •  " + progress.getPoints() + " оч."
-                    + "  •  В " + progress.getWins() + " / П " + progress.getLosses()
-                    + "  •  до след.: " + progress.getPointsToNextLevel();
+            animatedPoints = progress.getPoints();
+        }
+
+        boolean levelAnimating = levelUpAnimStart > 0L && now - levelUpAnimStart < LEVEL_ANIM_MS;
+        if (levelAnimating) postInvalidateOnAnimation();
+
+        float pulse = 1f;
+        if (animating) {
+            float t = Math.min(1f, (now - scoreAnimStart) / (float) SCORE_ANIM_MS);
+            pulse = 1f + 0.12f * (float)Math.sin(Math.PI * t);
+        }
+        if (levelAnimating) {
+            float t = Math.min(1f, (now - levelUpAnimStart) / (float) LEVEL_ANIM_MS);
+            pulse += 0.08f * (float)Math.sin(t * Math.PI * 6f);
         }
 
         p.setTextAlign(Paint.Align.CENTER);
+        p.setFakeBoldText(true);
+        p.setTextSize(dp(22f) * pulse);
+        p.setColor(levelAnimating ? accent : text);
+        c.drawText(Math.round(animatedPoints) + " ОЧКОВ", w / 2f, y, p);
+
+        String status;
+        if (progress.isMaxLevel()) {
+            status = "УР." + progress.getLevelNumber() + "  " + progress.getLevelName().toUpperCase(Locale.ROOT)
+                    + "   •   В " + progress.getWins() + " / П " + progress.getLosses()
+                    + "   •   MAX";
+        } else {
+            status = "УР." + progress.getLevelNumber() + "  " + progress.getLevelName().toUpperCase(Locale.ROOT)
+                    + "   •   В " + progress.getWins() + " / П " + progress.getLosses()
+                    + "   •   ДО СЛЕД.: " + progress.getPointsToNextLevel();
+        }
+
         p.setFakeBoldText(false);
-        p.setTextSize(dp(10.5f));
-        p.setColor(0xFF8DB8CB);
-        c.drawText(status, w / 2f, y, p);
+        p.setTextSize(dp(11f));
+        p.setColor(0xFF9FC8D9);
+        c.drawText(status, w / 2f, y + dp(18), p);
 
         float margin = dp(24);
-        float barTop = y + dp(5);
-        float barHeight = dp(3.5f);
+        float barTop = y + dp(25);
+        float barHeight = dp(5f);
         RectF bgBar = new RectF(margin, barTop, w - margin, barTop + barHeight);
         p.setColor(0xFF16344B);
         c.drawRoundRect(bgBar, barHeight / 2f, barHeight / 2f, p);
@@ -364,6 +400,27 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             RectF fillBar = new RectF(bgBar.left, bgBar.top, bgBar.left + progressWidth, bgBar.bottom);
             p.setColor(accent);
             c.drawRoundRect(fillBar, barHeight / 2f, barHeight / 2f, p);
+        }
+
+        if (animating && lastAwardedPoints > 0) {
+            float t = Math.min(1f, (now - scoreAnimStart) / (float) SCORE_ANIM_MS);
+            float floatY = y + dp(2) - dp(34) * t;
+            int alpha = (int)(255 * (1f - t));
+            p.setFakeBoldText(true);
+            p.setTextSize(dp(18));
+            p.setColor((alpha << 24) | 0x00FFC857);
+            c.drawText("+" + lastAwardedPoints, w / 2f + dp(70), floatY, p);
+            p.setFakeBoldText(false);
+        }
+
+        if (levelAnimating) {
+            float t = Math.min(1f, (now - levelUpAnimStart) / (float) LEVEL_ANIM_MS);
+            int alpha = (int)(255 * (1f - Math.max(0f, (t - 0.65f) / 0.35f)));
+            p.setFakeBoldText(true);
+            p.setTextSize(dp(16));
+            p.setColor((alpha << 24) | 0x00FFC857);
+            c.drawText("НОВЫЙ УРОВЕНЬ!", w / 2f, y + dp(48), p);
+            p.setFakeBoldText(false);
         }
     }
 
@@ -963,6 +1020,9 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         aiBusy = false;
         resultRecorded = false;
         lastAwardedPoints = 0;
+        scoreAnimStart = 0L;
+        levelUpAnimStart = 0L;
+        animatedPoints = progress.getPoints();
         message = "Ваш ход — стреляйте по полю врага";
         hintsEnabled = false;
         vibrate(18);
@@ -1011,6 +1071,9 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         aiBusy = false;
         resultRecorded = false;
         lastAwardedPoints = 0;
+        scoreAnimStart = 0L;
+        levelUpAnimStart = 0L;
+        animatedPoints = progress.getPoints();
         hintsEnabled = false;
         resetPlacementArrays();
         message = "Расставьте свои корабли: перетаскивайте, тап — поворот";
@@ -1080,7 +1143,24 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     private void recordBattleResult(boolean win) {
         if (resultRecorded) return;
         resultRecorded = true;
+
+        int beforePoints = progress.getPoints();
+        int beforeLevel = progress.getLevelNumber();
+
         lastAwardedPoints = win ? progress.recordWin() : progress.recordLoss();
+
+        int afterPoints = progress.getPoints();
+        int afterLevel = progress.getLevelNumber();
+
+        scoreAnimFrom = beforePoints;
+        scoreAnimTo = afterPoints;
+        animatedPoints = beforePoints;
+        scoreAnimStart = System.currentTimeMillis();
+
+        if (afterLevel > beforeLevel) {
+            levelUpAnimStart = System.currentTimeMillis();
+            if (soundEnabled) speak("Новый уровень...");
+        }
     }
 
     private void showMusicDialog() {
