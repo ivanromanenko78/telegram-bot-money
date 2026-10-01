@@ -6,6 +6,8 @@ import android.view.Window;
 import android.view.WindowManager;
 
 public class MainActivity extends Activity {
+    private BattleshipView battleshipView;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -13,6 +15,16 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(0xFF071B2F);
         getWindow().setNavigationBarColor(0xFF071B2F);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        setContentView(new BattleshipView(this));
+
+        battleshipView = new BattleshipView(this);
+        setContentView(battleshipView);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (battleshipView != null) {
+            battleshipView.release();
+        }
+        super.onDestroy();
     }
 }
