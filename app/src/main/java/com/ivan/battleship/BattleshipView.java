@@ -11,12 +11,14 @@ import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
 import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class BattleshipView extends View implements TextToSpeech.OnInitListener {
     private final BattleshipGame game = new BattleshipGame();
@@ -27,6 +29,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private boolean soundEnabled = true;
+    private boolean hintsEnabled = false;
     private int selectedTrack = 0;
     private static final String[] MUSIC_NAMES = {
             "Океан", "Сонар", "Шторм", "Бой", "Спокойствие"
@@ -39,6 +42,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     private final RectF boardRect = new RectF();
     private final RectF newGameRect = new RectF();
     private final RectF toggleRect = new RectF();
+    private final RectF hintRect = new RectF();
     private final RectF bottomActionRect = new RectF();
     private final RectF playerFleetRect = new RectF();
     private final RectF enemyFleetRect = new RectF();
@@ -107,9 +111,40 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             int result = tts.setLanguage(new Locale("ru", "RU"));
             ttsReady = result != TextToSpeech.LANG_MISSING_DATA
                     && result != TextToSpeech.LANG_NOT_SUPPORTED;
-            tts.setSpeechRate(0.94f);
-            tts.setPitch(0.92f);
+            chooseSoftFemaleRussianVoice();
+            tts.setSpeechRate(0.80f);
+            tts.setPitch(1.02f);
         }
+    }
+
+    private void chooseSoftFemaleRussianVoice() {
+        if (tts == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+        try {
+            Set<Voice> voices = tts.getVoices();
+            if (voices == null) return;
+
+            Voice best = null;
+            int bestScore = Integer.MIN_VALUE;
+
+            for (Voice voice : voices) {
+                Locale locale = voice.getLocale();
+                if (locale == null || !"ru".equalsIgnoreCase(locale.getLanguage())) continue;
+
+                String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+                int score = 0;
+                if ("RU".equalsIgnoreCase(locale.getCountry())) score += 20;
+                if (name.contains("female") || name.contains("woman") || name.contains("жен")) score += 100;
+                if (name.contains("network") || name.contains("neural") || name.contains("wavenet")) score += 25;
+                if (!voice.isNetworkConnectionRequired()) score += 5;
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = voice;
+                }
+            }
+
+            if (best != null) tts.setVoice(best);
+        } catch (Exception ignored) {}
     }
 
     public void release() {
@@ -149,14 +184,25 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         c.drawText(message, w / 2f, top + dp(52), p);
 
         float btnY = top + dp(70);
-        float btnW = (w - margin * 2 - gap) / 2f;
-        newGameRect.set(margin, btnY, margin + btnW, btnY + dp(44));
-        toggleRect.set(margin + btnW + gap, btnY, w - margin, btnY + dp(44));
-        drawButton(c, newGameRect, "Новая игра", false);
-        drawButton(c, toggleRect,
-                placementMode ? "Авторасстановка" :
-                        (soundEnabled ? "Музыка: " + MUSIC_NAMES[selectedTrack] : "Звук: выключен"),
-                true);
+        if (placementMode) {
+            float btnW = (w - margin * 2 - gap) / 2f;
+            newGameRect.set(margin, btnY, margin + btnW, btnY + dp(44));
+            toggleRect.set(margin + btnW + gap, btnY, w - margin, btnY + dp(44));
+            hintRect.setEmpty();
+            drawButton(c, newGameRect, "Новая игра", false);
+            drawButton(c, toggleRect, "Авторасстановка", true);
+        } else {
+            float smallGap = dp(6);
+            float btnW = (w - margin * 2 - smallGap * 2f) / 3f;
+            newGameRect.set(margin, btnY, margin + btnW, btnY + dp(44));
+            hintRect.set(newGameRect.right + smallGap, btnY,
+                    newGameRect.right + smallGap + btnW, btnY + dp(44));
+            toggleRect.set(hintRect.right + smallGap, btnY, w - margin, btnY + dp(44));
+
+            drawButton(c, newGameRect, "Новая игра", false);
+            drawButton(c, hintRect, hintsEnabled ? "Подсказки ✓" : "Подсказки ×", hintsEnabled);
+            drawButton(c, toggleRect, soundEnabled ? "Музыка" : "Звук выкл", soundEnabled);
+        }
 
         float labelY = btnY + dp(68);
         p.setTextAlign(Paint.Align.LEFT);
@@ -292,6 +338,9 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
 
     private void drawBoard(Canvas c, BattleshipGame.Board board, boolean enemyBoard) {
         drawBoardBackground(c);
+        if (enemyBoard && hintsEnabled && !game.isGameOver()) {
+            drawHints(c, board);
+        }
         float cell = boardRect.width() / 10f;
         for (int y = 0; y < 10; y++) {
             for (int x = 0; x < 10; x++) {
@@ -310,6 +359,63 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
                 }
             }
         }
+    }
+
+    private void drawHints(Canvas c, BattleshipGame.Board board) {
+        float cell = boardRect.width() / 10f;
+        boolean hasOpenHit = false;
+
+        for (int y = 0; y < 10; y++) {
+            for (int x = 0; x < 10; x++) {
+                if (!board.wasShot(x, y) || !board.hasShip(x, y)) continue;
+                int shipId = board.shipIdAt(x, y);
+                if (shipId >= 0 && !board.isSunk(shipId)) {
+                    hasOpenHit = true;
+                }
+            }
+        }
+
+        for (int y = 0; y < 10; y++) {
+            for (int x = 0; x < 10; x++) {
+                if (board.wasShot(x, y)) continue;
+
+                boolean recommended;
+                if (hasOpenHit) {
+                    recommended = isNextToOpenHit(board, x, y);
+                } else {
+                    recommended = ((x + y) & 1) == 0;
+                }
+
+                if (!recommended) continue;
+
+                float l = boardRect.left + x * cell;
+                float t = boardRect.top + y * cell;
+                float inset = cell * .13f;
+                RectF rr = new RectF(l + inset, t + inset, l + cell - inset, t + cell - inset);
+
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(hasOpenHit ? 0x55FFD166 : 0x244CE7D3);
+                c.drawRoundRect(rr, cell * .18f, cell * .18f, p);
+
+                stroke.setStrokeWidth(hasOpenHit ? dp(2.0f) : dp(1.1f));
+                stroke.setColor(hasOpenHit ? 0xFFFFD166 : 0xAA65E7D0);
+                c.drawRoundRect(rr, cell * .18f, cell * .18f, stroke);
+            }
+        }
+    }
+
+    private boolean isNextToOpenHit(BattleshipGame.Board board, int x, int y) {
+        int[][] directions = {{1,0},{-1,0},{0,1},{0,-1}};
+        for (int[] d : directions) {
+            int nx = x + d[0];
+            int ny = y + d[1];
+            if (nx < 0 || nx >= 10 || ny < 0 || ny >= 10) continue;
+            if (!board.wasShot(nx, ny) || !board.hasShip(nx, ny)) continue;
+
+            int shipId = board.shipIdAt(nx, ny);
+            if (shipId >= 0 && !board.isSunk(shipId)) return true;
+        }
+        return false;
     }
 
     private void drawMiniPlayerBoard(Canvas c, RectF rect) {
@@ -543,6 +649,13 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             resetToPlacement();
             return true;
         }
+        if (hintRect.contains(x, y)) {
+            hintsEnabled = !hintsEnabled;
+            message = hintsEnabled ? "Подсказки включены." : "Подсказки выключены.";
+            vibrate(12);
+            invalidate();
+            return true;
+        }
         if (toggleRect.contains(x, y)) {
             showMusicDialog();
             return true;
@@ -753,6 +866,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         showEnemy = true;
         aiBusy = false;
         message = "Ваш ход — стреляйте по полю врага";
+        hintsEnabled = false;
         vibrate(18);
         invalidate();
     }
@@ -797,6 +911,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         placementMode = true;
         showEnemy = false;
         aiBusy = false;
+        hintsEnabled = false;
         resetPlacementArrays();
         message = "Расставьте свои корабли: перетаскивайте, тап — поворот";
         invalidate();
