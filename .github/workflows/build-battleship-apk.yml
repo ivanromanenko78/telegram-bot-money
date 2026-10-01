@@ -24,9 +24,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build APK
-        run: gradle :app:assembleDebug --stacktrace
+      - name: Build unsigned release APK
+        run: gradle :app:assembleRelease --stacktrace
+      - name: Collect signing tool
+        run: |
+          cp /usr/local/lib/android/sdk/build-tools/35.0.0/lib/apksigner.jar ./apksigner.jar
       - uses: actions/upload-artifact@v4
         with:
-          name: MorskoyBoy-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: MorskoyBoy-release-unsigned
+          path: |
+            app/build/outputs/apk/release/app-release-unsigned.apk
+            apksigner.jar
