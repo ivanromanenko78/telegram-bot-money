@@ -26,6 +26,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final float density;
     private final MusicEngine musicEngine = new MusicEngine();
+    private final ProgressManager progress;
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private boolean soundEnabled = true;
@@ -52,6 +53,8 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     private final RectF endExitRect = new RectF();
 
     private boolean aiBusy = false;
+    private boolean resultRecorded = false;
+    private int lastAwardedPoints = 0;
 
     private final int bg = 0xFF071B2F;
     private final int panel = 0xFF0D2B47;
@@ -90,6 +93,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     public BattleshipView(Context context) {
         super(context);
         density = getResources().getDisplayMetrics().density;
+        progress = new ProgressManager(context);
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(dp(1));
         setBackgroundColor(bg);
@@ -181,9 +185,11 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
 
         p.setColor(0xFFB8D8E8);
         p.setTextSize(dp(13));
-        c.drawText(message, w / 2f, top + dp(52), p);
+        c.drawText(message, w / 2f, top + dp(50), p);
 
-        float btnY = top + dp(70);
+        drawProgressHeader(c, w, top + dp(67));
+
+        float btnY = top + dp(82);
         if (placementMode) {
             float btnW = (w - margin * 2 - gap) / 2f;
             newGameRect.set(margin, btnY, margin + btnW, btnY + dp(44));
@@ -278,6 +284,41 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         }
     }
 
+    private void drawProgressHeader(Canvas c, float w, float y) {
+        String status;
+        if (progress.isMaxLevel()) {
+            status = "Ур." + progress.getLevelNumber() + " " + progress.getLevelName()
+                    + "  •  " + progress.getPoints() + " оч."
+                    + "  •  В " + progress.getWins() + " / П " + progress.getLosses()
+                    + "  •  MAX";
+        } else {
+            status = "Ур." + progress.getLevelNumber() + " " + progress.getLevelName()
+                    + "  •  " + progress.getPoints() + " оч."
+                    + "  •  В " + progress.getWins() + " / П " + progress.getLosses()
+                    + "  •  до след.: " + progress.getPointsToNextLevel();
+        }
+
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setFakeBoldText(false);
+        p.setTextSize(dp(10.5f));
+        p.setColor(0xFF8DB8CB);
+        c.drawText(status, w / 2f, y, p);
+
+        float margin = dp(24);
+        float barTop = y + dp(5);
+        float barHeight = dp(3.5f);
+        RectF bgBar = new RectF(margin, barTop, w - margin, barTop + barHeight);
+        p.setColor(0xFF16344B);
+        c.drawRoundRect(bgBar, barHeight / 2f, barHeight / 2f, p);
+
+        float progressWidth = bgBar.width() * progress.getLevelProgress();
+        if (progressWidth > 0f) {
+            RectF fillBar = new RectF(bgBar.left, bgBar.top, bgBar.left + progressWidth, bgBar.bottom);
+            p.setColor(accent);
+            c.drawRoundRect(fillBar, barHeight / 2f, barHeight / 2f, p);
+        }
+    }
+
     private void drawEndOverlay(Canvas c, float w, float h) {
         p.setStyle(Paint.Style.FILL);
         p.setColor(0xCC03111F);
@@ -300,10 +341,16 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         drawButton(c, endNewGameRect, "Новая игра", true);
         drawButton(c, endExitRect, "Выйти", false);
 
+        p.setTextSize(dp(16));
+        p.setColor(text);
+        p.setFakeBoldText(true);
+        c.drawText("+" + lastAwardedPoints + " очков", w / 2f, top - dp(18), p);
+
         p.setTextSize(dp(13));
         p.setColor(0xFFB8D8E8);
         p.setFakeBoldText(false);
-        c.drawText("Выберите действие", w / 2f, top + dp(82), p);
+        c.drawText("Уровень " + progress.getLevelNumber() + " — " + progress.getLevelName(),
+                w / 2f, top + dp(82), p);
     }
 
     private void drawBoardBackground(Canvas c) {
@@ -672,6 +719,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
 
             if (game.isGameOver()) {
                 message = "ПОБЕДА";
+                recordBattleResult(true);
                 speak("Убил. Победа.");
                 invalidate();
                 return true;
@@ -865,6 +913,8 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         placementMode = false;
         showEnemy = true;
         aiBusy = false;
+        resultRecorded = false;
+        lastAwardedPoints = 0;
         message = "Ваш ход — стреляйте по полю врага";
         hintsEnabled = false;
         vibrate(18);
@@ -911,6 +961,8 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         placementMode = true;
         showEnemy = false;
         aiBusy = false;
+        resultRecorded = false;
+        lastAwardedPoints = 0;
         hintsEnabled = false;
         resetPlacementArrays();
         message = "Расставьте свои корабли: перетаскивайте, тап — поворот";
@@ -953,6 +1005,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             aiBusy = false;
             showEnemy = true;
             message = "ПОРАЖЕНИЕ";
+            recordBattleResult(false);
             speak("Поражение");
             invalidate();
             return;
@@ -974,6 +1027,12 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             invalidate();
             postDelayed(this::runAiTurn, 620);
         }
+    }
+
+    private void recordBattleResult(boolean win) {
+        if (resultRecorded) return;
+        resultRecorded = true;
+        lastAwardedPoints = win ? progress.recordWin() : progress.recordLoss();
     }
 
     private void showMusicDialog() {
