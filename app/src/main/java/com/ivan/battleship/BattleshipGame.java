@@ -193,17 +193,32 @@ public class BattleshipGame {
         aiTargets.clear();
     }
 
-    public void newGameWithPlayerPlacements(List<ShipPlacement> placements) {
-        player = new Board(random, false);
-        player.clearShipsAndShots();
+    public boolean newGameWithPlayerPlacements(List<ShipPlacement> placements) {
+        Board candidate = new Board(random, false);
+        candidate.clearShipsAndShots();
+
+        boolean[] seen = new boolean[FLEET.length];
+        if (placements == null || placements.size() != FLEET.length) return false;
+
         for (ShipPlacement placement : placements) {
-            player.placeShipManual(placement.id, placement.x, placement.y, placement.len, placement.horizontal);
+            if (placement == null || placement.id < 0 || placement.id >= FLEET.length) return false;
+            if (seen[placement.id] || placement.len != FLEET[placement.id]) return false;
+            if (!candidate.canPlaceShip(placement.id, placement.x, placement.y, placement.len, placement.horizontal)) {
+                return false;
+            }
+            candidate.placeShipManual(placement.id, placement.x, placement.y, placement.len, placement.horizontal);
+            seen[placement.id] = true;
         }
-        player.clearShotsOnly();
+
+        for (boolean present : seen) if (!present) return false;
+
+        candidate.clearShotsOnly();
+        player = candidate;
         enemy = new Board(random);
         gameOver = false;
         playerTurn = true;
         aiTargets.clear();
+        return true;
     }
 
     public void rearrangePlayer() {
