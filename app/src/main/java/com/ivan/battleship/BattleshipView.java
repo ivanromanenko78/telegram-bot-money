@@ -31,6 +31,7 @@ public class BattleshipView extends View {
     private final RectF playerFleetRect = new RectF();
     private final RectF enemyFleetRect = new RectF();
     private final RectF dockRect = new RectF();
+    private final RectF miniBoardRect = new RectF();
 
     private boolean aiBusy = false;
 
@@ -130,7 +131,7 @@ public class BattleshipView extends View {
         drawFleetRow(c, enemyFleetRect, "Флот врага", true);
 
         float gridTop = enemyFleetRect.bottom + dp(12);
-        float reservedBottom = placementMode ? dp(150) : dp(86);
+        float reservedBottom = placementMode ? dp(150) : dp(178);
         float side = Math.min(w - dp(56), getHeight() - gridTop - reservedBottom);
         side = Math.max(side, dp(240));
         float left = (w - side) / 2f;
@@ -155,13 +156,24 @@ public class BattleshipView extends View {
             p.setColor(0xFF7FA9BC);
             c.drawText("Тап по кораблю — поворот. Перетащите корабль на поле пальцем.", w / 2f, bottomActionRect.bottom + dp(18), p);
         } else {
-            bottomActionRect.set(margin, bottomY, w - margin, bottomY + dp(46));
-            boolean canManual = !game.isGameOver() && game.isPlayerTurn() && noPlayerShotsReceived();
-            drawButton(c, bottomActionRect, canManual ? "Ручная расстановка" : "Расстановка недоступна после начала боя", canManual);
+            bottomActionRect.setEmpty();
+
             p.setTextAlign(Paint.Align.CENTER);
-            p.setTextSize(dp(12));
+            p.setTextSize(dp(13));
+            p.setFakeBoldText(true);
+            p.setColor(ship);
+            c.drawText("МОЁ ПОЛЕ — АТАКИ КОМПЬЮТЕРА", w / 2f, bottomY + dp(14), p);
+            p.setFakeBoldText(false);
+
+            float miniSide = Math.min(dp(126), w * 0.31f);
+            float miniTop = bottomY + dp(22);
+            miniBoardRect.set((w - miniSide) / 2f, miniTop, (w + miniSide) / 2f, miniTop + miniSide);
+            drawMiniPlayerBoard(c, miniBoardRect);
+
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTextSize(dp(11));
             p.setColor(0xFF7FA9BC);
-            c.drawText("Внизу показаны все корабли. Серые — потоплены.", w / 2f, bottomActionRect.bottom + dp(18), p);
+            c.drawText("Огонь — попадание, точка — промах", w / 2f, miniBoardRect.bottom + dp(17), p);
         }
 
         if (placementMode && draggingShipId >= 0) {
@@ -219,6 +231,46 @@ public class BattleshipView extends View {
                 }
             }
         }
+    }
+
+    private void drawMiniPlayerBoard(Canvas c, RectF rect) {
+        BattleshipGame.Board board = game.getPlayer();
+        float cell = rect.width() / 10f;
+
+        p.setStyle(Paint.Style.FILL);
+        for (int y = 0; y < 10; y++) {
+            for (int x = 0; x < 10; x++) {
+                float l = rect.left + x * cell;
+                float t = rect.top + y * cell;
+                RectF r = new RectF(l, t, l + cell, t + cell);
+
+                p.setColor(((x + y) & 1) == 0 ? water : water2);
+                c.drawRect(r, p);
+
+                if (board.hasShip(x, y)) {
+                    p.setColor(ship);
+                    RectF sr = new RectF(l + cell * .10f, t + cell * .10f, l + cell * .90f, t + cell * .90f);
+                    c.drawRoundRect(sr, cell * .13f, cell * .13f, p);
+                }
+
+                if (board.wasShot(x, y)) {
+                    if (board.hasShip(x, y)) {
+                        drawFlame(c, l + cell * .5f, t + cell * .54f, cell * .34f);
+                    } else {
+                        p.setColor(miss);
+                        c.drawCircle(l + cell * .5f, t + cell * .5f, Math.max(dp(1.2f), cell * .10f), p);
+                    }
+                }
+
+                stroke.setColor(line);
+                stroke.setStrokeWidth(Math.max(dp(.45f), cell * .035f));
+                c.drawRect(r, stroke);
+            }
+        }
+
+        stroke.setColor(0xFFA7D5E7);
+        stroke.setStrokeWidth(dp(1.5f));
+        c.drawRect(rect, stroke);
     }
 
     private void drawShipCell(Canvas c, float l, float t, float cell, int fill, int inner) {
@@ -699,7 +751,7 @@ public class BattleshipView extends View {
             message = "Компьютер промахнулся. Ваш ход.";
             invalidate();
         } else {
-            showEnemy = false;
+            showEnemy = true;
             message = s.result == BattleshipGame.ShotResult.SUNK ? "Компьютер потопил корабль…" : "Компьютер попал…";
             invalidate();
             postDelayed(this::runAiTurn, 520);
