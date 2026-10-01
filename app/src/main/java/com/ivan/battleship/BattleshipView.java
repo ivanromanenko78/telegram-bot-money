@@ -125,8 +125,10 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
             ttsReady = result != TextToSpeech.LANG_MISSING_DATA
                     && result != TextToSpeech.LANG_NOT_SUPPORTED;
             chooseSoftFemaleRussianVoice();
-            tts.setSpeechRate(0.78f);
-            tts.setPitch(0.94f);
+            // A higher pitch is intentional: some Android Russian engines expose only a
+            // neutral/male base voice even when the voice metadata is incomplete.
+            tts.setSpeechRate(0.84f);
+            tts.setPitch(1.34f);
         }
     }
 
@@ -179,10 +181,14 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
                 int score = 0;
 
                 // Google Russian female voices commonly expose these identifiers.
-                if (name.contains("#female_")) score += 1000;
-                if (name.contains("x-dfc")) score += 900;
-                if (name.contains("x-rue")) score += 850;
-                if (name.equals("ru-ru-language") || name.contains("ru-ru-language")) score += 700;
+                if (name.contains("#female_")) score += 5000;
+                if (name.contains("female")) score += 4000;
+                if (name.contains("woman")) score += 4000;
+                if (name.contains("жен")) score += 4000;
+                if (name.contains("x-dfc")) score += 3000;
+                if (name.contains("x-rue")) score += 2500;
+                // Generic voices are fallback only, not preferred.
+                if (name.equals("ru-ru-language") || name.contains("ru-ru-language")) score += 50;
 
                 if (name.contains("female")
                         || name.contains("woman")
@@ -287,7 +293,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         drawFleetRow(c, enemyFleetRect, "Флот врага", true);
 
         float gridTop = enemyFleetRect.bottom + dp(12);
-        float reservedBottom = placementMode ? dp(150) : dp(190);
+        float reservedBottom = placementMode ? dp(205) : dp(190);
         float side = Math.min(w - dp(56), getHeight() - gridTop - reservedBottom);
         side = Math.max(side, dp(240));
         float left = (w - side) / 2f;
@@ -302,9 +308,9 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
 
         float bottomY = boardRect.bottom + dp(14);
         if (placementMode) {
-            dockRect.set(margin, bottomY, w - margin, bottomY + dp(58));
+            dockRect.set(margin, bottomY, w - margin, bottomY + dp(88));
             drawDock(c, dockRect);
-            bottomActionRect.set(margin, dockRect.bottom + dp(10), w - margin, dockRect.bottom + dp(54));
+            bottomActionRect.set(margin, dockRect.bottom + dp(12), w - margin, dockRect.bottom + dp(58));
             drawButton(c, bottomActionRect, allShipsPlaced() ? "Готово — начать игру" : "Сначала расставьте все корабли", allShipsPlaced());
             p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(dp(12));
