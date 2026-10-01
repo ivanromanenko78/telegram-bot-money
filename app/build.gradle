@@ -7,10 +7,10 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.ivan.battleship.v2'
+        applicationId 'com.ivan.battleship.v3'
         minSdk 23
         targetSdk 35
-        versionCode 2
-        versionName '2.0'
+        versionCode 3
+        versionName '3.0'
     }
 }
