@@ -593,7 +593,14 @@ public class BattleshipView extends View {
         for (int id = 0; id < lengths.length; id++) {
             placements.add(new BattleshipGame.ShipPlacement(id, lengths[id], setupX[id], setupY[id], setupHorizontal[id]));
         }
-        game.newGameWithPlayerPlacements(placements);
+        if (!game.newGameWithPlayerPlacements(placements)) {
+            placementMode = true;
+            showEnemy = false;
+            message = "Ошибка расстановки: корабль выходит за поле или касается другого.";
+            vibrate(40);
+            invalidate();
+            return;
+        }
         placementMode = false;
         showEnemy = true;
         aiBusy = false;
@@ -608,7 +615,7 @@ public class BattleshipView extends View {
                 {0, 0, 0, 1},
                 {1, 2, 2, 0},
                 {2, 5, 0, 0},
-                {3, 9, 0, 1},
+                {3, 8, 0, 1},
                 {4, 0, 4, 0},
                 {5, 7, 4, 1},
                 {6, 3, 6, 0},
@@ -623,7 +630,7 @@ public class BattleshipView extends View {
             setupHorizontal[id] = s[3] == 1;
             setupPlaced[id] = true;
         }
-        message = "Авторасстановка готова. Можно перетаскивать и поворачивать.";
+        message = "Авторасстановка готова. Двигайте корабли пальцем, тап — поворот.";
         invalidate();
     }
 
