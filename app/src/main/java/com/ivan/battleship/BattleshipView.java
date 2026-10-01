@@ -1,5 +1,6 @@
 package com.ivan.battleship;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -8,17 +9,26 @@ import android.graphics.RectF;
 import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.speech.tts.TextToSpeech;
 import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
-public class BattleshipView extends View {
+public class BattleshipView extends View implements TextToSpeech.OnInitListener {
     private final BattleshipGame game = new BattleshipGame();
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final float density;
+    private final MusicEngine musicEngine = new MusicEngine();
+    private TextToSpeech tts;
+    private boolean ttsReady = false;
+    private int selectedTrack = 0;
+    private static final String[] MUSIC_NAMES = {
+            "Океан", "Сонар", "Шторм", "Бой", "Спокойствие"
+    };
 
     private boolean showEnemy = false;
     private boolean placementMode = true;
@@ -80,6 +90,37 @@ public class BattleshipView extends View {
             setupHorizontal[i] = true;
             dockShipRects[i] = new RectF();
         }
+
+        tts = new TextToSpeech(context, this);
+        musicEngine.setTrack(selectedTrack);
+        musicEngine.setVolume(0.12f);
+        musicEngine.start();
+    }
+
+    @Override
+    public void onInit(int status) {
+        if (status == TextToSpeech.SUCCESS && tts != null) {
+            int result = tts.setLanguage(new Locale("ru", "RU"));
+            ttsReady = result != TextToSpeech.LANG_MISSING_DATA
+                    && result != TextToSpeech.LANG_NOT_SUPPORTED;
+            tts.setSpeechRate(0.94f);
+            tts.setPitch(0.92f);
+        }
+    }
+
+    public void release() {
+        musicEngine.stop();
+        if (tts != null) {
+            try { tts.stop(); } catch (Exception ignored) {}
+            try { tts.shutdown(); } catch (Exception ignored) {}
+            tts = null;
+        }
+    }
+
+    private void speak(String phrase) {
+        if (ttsReady && tts != null) {
+            tts.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "battleship_voice");
+        }
     }
 
     private float dp(float v) { return v * density; }
@@ -108,14 +149,16 @@ public class BattleshipView extends View {
         newGameRect.set(margin, btnY, margin + btnW, btnY + dp(44));
         toggleRect.set(margin + btnW + gap, btnY, w - margin, btnY + dp(44));
         drawButton(c, newGameRect, "Новая игра", false);
-        drawButton(c, toggleRect, placementMode ? "Авторасстановка" : (showEnemy ? "Показать моё поле" : "Поле врага"), true);
+        drawButton(c, toggleRect,
+                placementMode ? "Авторасстановка" : "Музыка: " + MUSIC_NAMES[selectedTrack],
+                true);
 
         float labelY = btnY + dp(68);
         p.setTextAlign(Paint.Align.LEFT);
         p.setTextSize(dp(15));
-        p.setColor(placementMode ? ship : (showEnemy ? accent : ship));
+        p.setColor(placementMode ? ship : accent);
         p.setFakeBoldText(true);
-        c.drawText(placementMode ? "РАССТАНОВКА ФЛОТА" : (showEnemy ? "ПОЛЕ ВРАГА" : "МОЁ ПОЛЕ"), margin, labelY, p);
+        c.drawText(placementMode ? "РАССТАНОВКА ФЛОТА" : "ПОЛЕ ВРАГА", margin, labelY, p);
         p.setFakeBoldText(false);
 
         p.setTextAlign(Paint.Align.RIGHT);
@@ -131,16 +174,15 @@ public class BattleshipView extends View {
         drawFleetRow(c, enemyFleetRect, "Флот врага", true);
 
         float gridTop = enemyFleetRect.bottom + dp(12);
-        float reservedBottom = placementMode ? dp(150) : dp(178);
+        float reservedBottom = placementMode ? dp(150) : dp(190);
         float side = Math.min(w - dp(56), getHeight() - gridTop - reservedBottom);
         side = Math.max(side, dp(240));
         float left = (w - side) / 2f;
         boardRect.set(left, gridTop, left + side, gridTop + side);
 
-        if (placementMode || !showEnemy) {
+        if (placementMode) {
             drawBoardBackground(c);
-            if (placementMode) drawSetupShipsOnBoard(c);
-            else drawBoard(c, game.getPlayer(), false);
+            drawSetupShipsOnBoard(c);
         } else {
             drawBoard(c, game.getEnemy(), true);
         }
@@ -165,7 +207,7 @@ public class BattleshipView extends View {
             c.drawText("МОЁ ПОЛЕ — АТАКИ КОМПЬЮТЕРА", w / 2f, bottomY + dp(14), p);
             p.setFakeBoldText(false);
 
-            float miniSide = Math.min(dp(126), w * 0.31f);
+            float miniSide = Math.min(dp(138), w * 0.34f);
             float miniTop = bottomY + dp(22);
             miniBoardRect.set((w - miniSide) / 2f, miniTop, (w + miniSide) / 2f, miniTop + miniSide);
             drawMiniPlayerBoard(c, miniBoardRect);
@@ -179,6 +221,28 @@ public class BattleshipView extends View {
         if (placementMode && draggingShipId >= 0) {
             drawFloatingShip(c, draggingShipId, dragTouchX, dragTouchY);
         }
+
+        if (!placementMode && game.isGameOver()) {
+            drawEndOverlay(c, w, getHeight());
+        }
+    }
+
+    private void drawEndOverlay(Canvas c, float w, float h) {
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xCC03111F);
+        c.drawRect(0, 0, w, h, p);
+
+        String result = game.playerWon() ? "ПОБЕДА" : "ПОРАЖЕНИЕ";
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setFakeBoldText(true);
+        p.setTextSize(dp(48));
+        p.setColor(game.playerWon() ? accent : hit);
+        c.drawText(result, w / 2f, h / 2f, p);
+
+        p.setTextSize(dp(15));
+        p.setColor(text);
+        p.setFakeBoldText(false);
+        c.drawText("Нажмите «Новая игра» для следующего боя", w / 2f, h / 2f + dp(34), p);
     }
 
     private void drawBoardBackground(Canvas c) {
@@ -449,16 +513,11 @@ public class BattleshipView extends View {
             return true;
         }
         if (toggleRect.contains(x, y)) {
-            showEnemy = !showEnemy;
-            invalidate();
-            return true;
-        }
-        if (bottomActionRect.contains(x, y) && !game.isGameOver() && game.isPlayerTurn() && noPlayerShotsReceived()) {
-            enterPlacementFromCurrentBoard();
+            showMusicDialog();
             return true;
         }
 
-        if (!showEnemy || aiBusy || !game.isPlayerTurn() || game.isGameOver()) return true;
+        if (aiBusy || !game.isPlayerTurn() || game.isGameOver()) return true;
         if (boardRect.contains(x, y)) {
             int cx = (int) ((x - boardRect.left) / (boardRect.width() / 10f));
             int cy = (int) ((y - boardRect.top) / (boardRect.height() / 10f));
@@ -466,21 +525,27 @@ public class BattleshipView extends View {
             BattleshipGame.ShotResult r = game.playerShoot(cx, cy);
             if (r == BattleshipGame.ShotResult.ALREADY) return true;
             vibrate(r == BattleshipGame.ShotResult.MISS ? 18 : 45);
+
             if (game.isGameOver()) {
-                message = game.playerWon() ? "Победа! Флот врага уничтожен." : "Поражение";
+                message = "ПОБЕДА";
+                speak("Убил. Победа.");
                 invalidate();
                 return true;
             }
+
             if (r == BattleshipGame.ShotResult.MISS) {
+                speak("Мимо");
                 message = "Мимо. Ход компьютера…";
                 aiBusy = true;
                 invalidate();
                 postDelayed(this::runAiTurn, 420);
             } else if (r == BattleshipGame.ShotResult.SUNK) {
-                message = "Корабль потоплен! Стреляйте ещё.";
+                speak("Убил");
+                message = "Убил! Стреляйте ещё.";
                 invalidate();
             } else {
-                message = "Попадание! Стреляйте ещё.";
+                speak("Ранил");
+                message = "Ранил! Стреляйте ещё.";
                 invalidate();
             }
         }
@@ -740,22 +805,45 @@ public class BattleshipView extends View {
         vibrate(s.result == BattleshipGame.ShotResult.MISS ? 16 : 40);
         if (game.isGameOver()) {
             aiBusy = false;
-            showEnemy = false;
-            message = "Поражение. Ваш флот уничтожен.";
+            showEnemy = true;
+            message = "ПОРАЖЕНИЕ";
+            speak("Убил. Поражение.");
             invalidate();
             return;
         }
+
         if (s.result == BattleshipGame.ShotResult.MISS) {
+            speak("Мимо");
             aiBusy = false;
             showEnemy = true;
-            message = "Компьютер промахнулся. Ваш ход.";
+            message = "Компьютер: мимо. Ваш ход.";
             invalidate();
-        } else {
+        } else if (s.result == BattleshipGame.ShotResult.SUNK) {
+            speak("Убил");
             showEnemy = true;
-            message = s.result == BattleshipGame.ShotResult.SUNK ? "Компьютер потопил корабль…" : "Компьютер попал…";
+            message = "Компьютер: убил.";
             invalidate();
-            postDelayed(this::runAiTurn, 520);
+            postDelayed(this::runAiTurn, 620);
+        } else {
+            speak("Ранил");
+            showEnemy = true;
+            message = "Компьютер: ранил.";
+            invalidate();
+            postDelayed(this::runAiTurn, 620);
         }
+    }
+
+    private void showMusicDialog() {
+        new AlertDialog.Builder(getContext())
+                .setTitle("Выберите музыку")
+                .setSingleChoiceItems(MUSIC_NAMES, selectedTrack, (dialog, which) -> {
+                    selectedTrack = which;
+                    musicEngine.setTrack(which);
+                    invalidate();
+                    dialog.dismiss();
+                })
+                .setNegativeButton("Закрыть", null)
+                .show();
     }
 
     private boolean noPlayerShotsReceived() {
