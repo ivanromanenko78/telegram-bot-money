@@ -1,5 +1,6 @@
 package com.ivan.battleship;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Canvas;
@@ -25,6 +26,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     private final MusicEngine musicEngine = new MusicEngine();
     private TextToSpeech tts;
     private boolean ttsReady = false;
+    private boolean soundEnabled = true;
     private int selectedTrack = 0;
     private static final String[] MUSIC_NAMES = {
             "Океан", "Сонар", "Шторм", "Бой", "Спокойствие"
@@ -42,6 +44,8 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     private final RectF enemyFleetRect = new RectF();
     private final RectF dockRect = new RectF();
     private final RectF miniBoardRect = new RectF();
+    private final RectF endNewGameRect = new RectF();
+    private final RectF endExitRect = new RectF();
 
     private boolean aiBusy = false;
 
@@ -118,7 +122,7 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     }
 
     private void speak(String phrase) {
-        if (ttsReady && tts != null) {
+        if (soundEnabled && ttsReady && tts != null) {
             tts.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "battleship_voice");
         }
     }
@@ -150,7 +154,8 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         toggleRect.set(margin + btnW + gap, btnY, w - margin, btnY + dp(44));
         drawButton(c, newGameRect, "Новая игра", false);
         drawButton(c, toggleRect,
-                placementMode ? "Авторасстановка" : "Музыка: " + MUSIC_NAMES[selectedTrack],
+                placementMode ? "Авторасстановка" :
+                        (soundEnabled ? "Музыка: " + MUSIC_NAMES[selectedTrack] : "Звук: выключен"),
                 true);
 
         float labelY = btnY + dp(68);
@@ -237,12 +242,22 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         p.setFakeBoldText(true);
         p.setTextSize(dp(48));
         p.setColor(game.playerWon() ? accent : hit);
-        c.drawText(result, w / 2f, h / 2f, p);
+        c.drawText(result, w / 2f, h / 2f - dp(46), p);
 
-        p.setTextSize(dp(15));
-        p.setColor(text);
+        float margin = dp(34);
+        float gap = dp(12);
+        float buttonW = (w - margin * 2 - gap) / 2f;
+        float top = h / 2f + dp(4);
+        endNewGameRect.set(margin, top, margin + buttonW, top + dp(54));
+        endExitRect.set(margin + buttonW + gap, top, w - margin, top + dp(54));
+
+        drawButton(c, endNewGameRect, "Новая игра", true);
+        drawButton(c, endExitRect, "Выйти", false);
+
+        p.setTextSize(dp(13));
+        p.setColor(0xFFB8D8E8);
         p.setFakeBoldText(false);
-        c.drawText("Нажмите «Новая игра» для следующего боя", w / 2f, h / 2f + dp(34), p);
+        c.drawText("Выберите действие", w / 2f, top + dp(82), p);
     }
 
     private void drawBoardBackground(Canvas c) {
@@ -507,6 +522,22 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
 
         if (placementMode) return handlePlacementTouch(e, x, y);
         if (e.getAction() != MotionEvent.ACTION_UP) return true;
+
+        if (game.isGameOver()) {
+            if (endNewGameRect.contains(x, y)) {
+                resetToPlacement();
+                return true;
+            }
+            if (endExitRect.contains(x, y)) {
+                release();
+                Context context = getContext();
+                if (context instanceof Activity) {
+                    ((Activity) context).finish();
+                }
+                return true;
+            }
+            return true;
+        }
 
         if (newGameRect.contains(x, y)) {
             resetToPlacement();
@@ -813,19 +844,16 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
         }
 
         if (s.result == BattleshipGame.ShotResult.MISS) {
-            speak("Мимо");
             aiBusy = false;
             showEnemy = true;
             message = "Компьютер: мимо. Ваш ход.";
             invalidate();
         } else if (s.result == BattleshipGame.ShotResult.SUNK) {
-            speak("Убил");
             showEnemy = true;
             message = "Компьютер: убил.";
             invalidate();
             postDelayed(this::runAiTurn, 620);
         } else {
-            speak("Ранил");
             showEnemy = true;
             message = "Компьютер: ранил.";
             invalidate();
@@ -834,11 +862,26 @@ public class BattleshipView extends View implements TextToSpeech.OnInitListener 
     }
 
     private void showMusicDialog() {
+        String[] items = {
+                "Океан", "Сонар", "Шторм", "Бой", "Спокойствие", "Без звука"
+        };
+        int checked = soundEnabled ? selectedTrack : 5;
+
         new AlertDialog.Builder(getContext())
-                .setTitle("Выберите музыку")
-                .setSingleChoiceItems(MUSIC_NAMES, selectedTrack, (dialog, which) -> {
-                    selectedTrack = which;
-                    musicEngine.setTrack(which);
+                .setTitle("Музыка и звук")
+                .setSingleChoiceItems(items, checked, (dialog, which) -> {
+                    if (which == 5) {
+                        soundEnabled = false;
+                        musicEngine.setVolume(0f);
+                        if (tts != null) {
+                            try { tts.stop(); } catch (Exception ignored) {}
+                        }
+                    } else {
+                        selectedTrack = which;
+                        soundEnabled = true;
+                        musicEngine.setTrack(which);
+                        musicEngine.setVolume(0.12f);
+                    }
                     invalidate();
                     dialog.dismiss();
                 })
